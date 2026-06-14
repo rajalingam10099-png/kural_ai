@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Single Page App routing: serve index.html for all client routes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Example API proxy (uncomment and set your backend URL if you deploy a separate API)
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://your-backend.example.com/:splat"
+#   status = 200
+#   force = true

@@ -1,0 +1,6 @@
+{
+  "name": "Kural AI",
+  "description": "An interactive, beautifully gamified Tamil language learning application for English speakers featuring AI tutor Tamil Arasi, real-time spelling correction, blackboard writing guides, voice evaluation, and visual metrics.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
