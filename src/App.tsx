@@ -566,18 +566,51 @@ export default function App() {
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
+    // Helper: normalize text for Tamil comparison
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[\p{P}\p{S}\s]+/gu, "") // remove punctuation, symbols, whitespace
+        .normalize("NFKD");
+
+    // Levenshtein distance for fuzzy matching
+    const levenshtein = (a: string, b: string) => {
+      if (a === b) return 0;
+      const al = a.length;
+      const bl = b.length;
+      if (al === 0) return bl;
+      if (bl === 0) return al;
+      const v0 = new Array(bl + 1).fill(0).map((_, i) => i);
+      const v1 = new Array(bl + 1).fill(0);
+      for (let i = 0; i < al; i++) {
+        v1[0] = i + 1;
+        for (let j = 0; j < bl; j++) {
+          const cost = a[i] === b[j] ? 0 : 1;
+          v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+        }
+        for (let j = 0; j <= bl; j++) v0[j] = v1[j];
+      }
+      return v1[bl];
+    };
+
     recognition.onresult = (e: any) => {
-      const text = e.results[0][0].transcript;
+      const text = e.results[0][0].transcript || "";
       setRecognizedText(text);
-      
-      // Look for a close matches
-      const isSub = text.toLowerCase().includes(targetWord.toLowerCase()) || 
-                    targetWord.toLowerCase().includes(text.toLowerCase());
-      
-      if (isSub || text.length > 0) {
+
+      const normText = normalize(text);
+      const normTarget = normalize(targetWord);
+
+      const maxLen = Math.max(normText.length, normTarget.length, 1);
+      const dist = levenshtein(normText, normTarget);
+      const similarity = 1 - dist / maxLen; // 0..1
+
+      // Accept if similarity >= 0.6 or exact substring in original text
+      const substringMatch = text.toLowerCase().includes(targetWord.toLowerCase()) || targetWord.toLowerCase().includes(text.toLowerCase());
+
+      if (similarity >= 0.6 || substringMatch) {
         setSpeechFeedback({
           success: true,
-          msg: `Nandri! We picked up "${text}". Excellent pronunciation match! (+20 XP)`,
+          msg: `Nandri! We picked up "${text}". Pronunciation match (${Math.round(similarity * 100)}%). (+20 XP)`,
           letterMatched: text
         });
         setXp((prev) => prev + 20);
@@ -585,7 +618,7 @@ export default function App() {
       } else {
         setSpeechFeedback({
           success: false,
-          msg: `We heard "${text}". Try to sound it out phonetically like "${targetWord}". Let's repeat!`
+          msg: `We heard "${text}". Similarity ${Math.round(similarity * 100)}% — try to sound it more like "${targetWord}".`
         });
       }
     };

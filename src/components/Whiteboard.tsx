@@ -184,6 +184,58 @@ export default function Whiteboard({ targetLetter, phonics, onAssessmentComplete
     setLoading(true);
     setEvaluation(null);
     const imageBase64 = canvas.toDataURL("image/png");
+    // Local heuristic fallback: compute pixel coverage and centering to give immediate feedback
+    const computeLocalEvaluation = (): EvaluationResult => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return { score: 80, isMatch: true, feedback: "Drawing looks fine.", tips: "Try to trace with continuous strokes." };
+      }
+      const w = canvas.width;
+      const h = canvas.height;
+      const img = ctx.getImageData(0, 0, w, h);
+      let nonEmpty = 0;
+      let minX = w, minY = h, maxX = 0, maxY = 0;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          const alpha = img.data[idx + 3];
+          if (alpha > 20) {
+            nonEmpty++;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      const pixelCoverage = nonEmpty / (w * h);
+      const boxW = Math.max(1, maxX - minX);
+      const boxH = Math.max(1, maxY - minY);
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      const centerDist = Math.hypot(centerX - w / 2, centerY - h / 2) / Math.hypot(w / 2, h / 2);
+
+      // Ideal coverage heuristics depend on letter; choose mid-range
+      const idealCoverage = 0.008; // tuned for stroke thinness
+      let score = Math.round(Math.min(98, Math.max(30, (pixelCoverage / idealCoverage) * 100)));
+      // Penalize if off-center
+      score = Math.round(score * (1 - Math.min(0.35, centerDist)));
+
+      const feedback = `Detected strokes cover ${(pixelCoverage * 100).toFixed(2)}% of the board. Bounding box ${Math.round(boxW)}x${Math.round(boxH)}.`;
+      const tips = centerDist > 0.15 ? "Try to centre your strokes on the guide letter and follow the template lines." : "Good placement — keep steady strokes and continuous flow.";
+
+      return {
+        score,
+        isMatch: score >= 65,
+        feedback,
+        tips,
+      };
+    };
+
+    // Show quick local evaluation while awaiting server
+    const localEval = computeLocalEvaluation();
+    setEvaluation(localEval);
+    onAssessmentCompleted(localEval.score);
 
     try {
       const response = await fetch("/api/ai/analyze-writing", {
@@ -205,15 +257,7 @@ export default function Whiteboard({ targetLetter, phonics, onAssessmentComplete
       onAssessmentCompleted(data.score);
     } catch (err) {
       console.error("Tracing correction error:", err);
-      // Soft simulation backup if network lacks API key
-      const mockResult: EvaluationResult = {
-        score: Math.floor(Math.random() * 20) + 75,
-        isMatch: true,
-        feedback: "Aromano! Your stroke trajectory matches " + targetLetter + " beautiful curves.",
-        tips: "Keep your flow continuous. Tracing a little slower improves alignment further!",
-      };
-      setEvaluation(mockResult);
-      onAssessmentCompleted(mockResult.score);
+      // Keep localEval already set as fallback
     } finally {
       setLoading(false);
     }
